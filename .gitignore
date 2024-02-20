@@ -1,0 +1,11 @@
+!.gitignore
+.project
+.idea
+*.iml
+target
+build
+git.json
+test-results/
+playwright-report/
+__debug_bin
+.vscode/
