@@ -43,7 +43,7 @@ public class HandlerImpl implements Handler {
             var res = supplier.get();
             switch (res) {
                 case Response.Failure failure -> {
-                    return new ApplicationStatusResponse.Failure(Duration.between(Instant.now(), startedAt), i);
+                    return new ApplicationStatusResponse.Failure(Duration.between(startedAt, Instant.now()), i);
                 }
                 case Response.RetryAfter retryAfter -> {
                     Thread.sleep(retryAfter.delay());
