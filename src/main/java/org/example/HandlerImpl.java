@@ -6,6 +6,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.StructuredTaskScope;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 public class HandlerImpl implements Handler {
 
@@ -18,29 +19,15 @@ public class HandlerImpl implements Handler {
     @Override
     public ApplicationStatusResponse performOperation(String id) {
 
-        try (var scope = new StructuredTaskScope.ShutdownOnSuccess<Response>()) {
+        try (var scope = new StructuredTaskScope.ShutdownOnSuccess<ApplicationStatusResponse>()) {
             var startedAt = Instant.now();
             var deadline = startedAt.plus(15, ChronoUnit.SECONDS);
 
-            scope.fork(() -> client.getApplicationStatus1(id));
-            scope.fork(() -> client.getApplicationStatus2(id));
-
+            scope.fork(() -> getResult(() -> client.getApplicationStatus1(id), startedAt));
+            scope.fork(() -> getResult(() -> client.getApplicationStatus2(id), startedAt));
             scope.joinUntil(deadline);
 
-            var res = scope.result();
-            switch (res) {
-                case Response.Failure failure -> {
-                    return new ApplicationStatusResponse.Failure(Duration.between(Instant.now(), startedAt), 1);
-                }
-                case Response.RetryAfter retryAfter -> {
-                    return new ApplicationStatusResponse.Failure(Duration.between(Instant.now(), startedAt), 1);
-                }
-                case Response.Success success -> {
-                    return new ApplicationStatusResponse.Success(success.applicationId(), success.applicationStatus());
-                }
-            }
-
-
+            return scope.result();
         } catch (ExecutionException e) {
             return new ApplicationStatusResponse.Failure(Duration.ZERO, 0);
         } catch (InterruptedException e) {
@@ -48,6 +35,23 @@ public class HandlerImpl implements Handler {
             return new ApplicationStatusResponse.Failure(Duration.ZERO, 0);
         } catch (TimeoutException e) {
             return new ApplicationStatusResponse.Failure(Duration.ZERO, 0);
+        }
+    }
+
+    private ApplicationStatusResponse getResult(Supplier<Response> supplier, Instant startedAt) throws InterruptedException {
+        for (int i = 0; ; i++) {
+            var res = supplier.get();
+            switch (res) {
+                case Response.Failure failure -> {
+                    return new ApplicationStatusResponse.Failure(Duration.between(Instant.now(), startedAt), i);
+                }
+                case Response.RetryAfter retryAfter -> {
+                    Thread.sleep(retryAfter.delay());
+                }
+                case Response.Success success -> {
+                    return new ApplicationStatusResponse.Success(success.applicationId(), success.applicationStatus());
+                }
+            }
         }
     }
 }
